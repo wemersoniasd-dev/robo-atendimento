@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     PAINEL DO DONO
+     Mostra agendamentos, faturamento previsto e permite cancelar.
+     Acessível em http://localhost:5000/painel
+     ============================================================ -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do Dono</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 24px;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+    }
+    h1 { font-size: 22px; }
+    h1 small { color: #94a3b8; font-weight: normal; font-size: 14px; }
+    .status { font-size: 12px; color: #94a3b8; }
+    .status .bola {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e; margin-right: 5px;
+      animation: pulsar 1.5s infinite;
+    }
+    @keyframes pulsar { 50% { opacity: .4; } }
+
+    /* --- cartões de resumo --- */
+    .cartoes { display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+    .cartao {
+      flex: 1; min-width: 160px; background: #1e293b;
+      border-radius: 12px; padding: 18px;
+      border: 1px solid #334155;
+    }
+    .cartao .titulo { font-size: 12px; color: #94a3b8; text-transform: uppercase; }
+    .cartao .valor { font-size: 26px; font-weight: bold; margin-top: 6px; }
+    .cartao .destaque { color: #22c55e; }
+
+    /* --- filtros --- */
+    .filtros { display: flex; gap: 8px; margin-bottom: 14px; }
+    .filtros button {
+      background: #1e293b; color: #94a3b8; border: 1px solid #334155;
+      padding: 8px 18px; border-radius: 20px; cursor: pointer; font-size: 13px;
+    }
+    .filtros button.ativo { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+    /* --- tabela --- */
+    .tabela-box {
+      background: #1e293b; border-radius: 12px;
+      border: 1px solid #334155; overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th {
+      text-align: left; padding: 12px 14px; background: #0f172a;
+      color: #94a3b8; font-size: 11px; text-transform: uppercase;
+    }
+    td { padding: 12px 14px; border-top: 1px solid #334155; }
+    tr:hover td { background: #263449; }
+    .preco { color: #22c55e; font-weight: bold; }
+    .btn-cancelar {
+      background: none; border: 1px solid #ef4444; color: #ef4444;
+      padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    .btn-cancelar:hover { background: #ef4444; color: #fff; }
+    .vazio { text-align: center; padding: 40px; color: #64748b; }
+    .voltar {
+      display: inline-block; margin-top: 18px; color: #94a3b8;
+      font-size: 13px; text-decoration: none;
+    }
+    .voltar:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>💈 Buguinha BARBER <small>· painel do dono</small></h1>
+      <div class="status"><span class="bola"></span>atualiza sozinho a cada 30s</div>
+    </header>
+
+    <!-- resumo -->
+    <div class="cartoes">
+      <div class="cartao">
+        <div class="titulo">Agendamentos futuros</div>
+        <div class="valor" id="total-futuros">–</div>
+      </div>
+      <div class="cartao">
+        <div class="titulo">Hoje</div>
+        <div class="valor" id="total-hoje">–</div>
+      </div>
+      <div class="cartao">
+        <div class="titulo">Faturamento previsto</div>
+        <div class="valor destaque" id="faturamento">–</div>
+      </div>
+    </div>
+
+    <!-- filtros -->
+    <div class="filtros">
+      <button data-filtro="futuros" class="ativo">Futuros</button>
+      <button data-filtro="hoje">Hoje</button>
+      <button data-filtro="todos">Todos</button>
+    </div>
+
+    <!-- tabela -->
+    <div class="tabela-box">
+      <table>
+        <thead>
+          <tr>
+            <th>Data / Hora</th><th>Cliente</th><th>Telefone</th>
+            <th>Serviço</th><th>Valor</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="linhas">
+          <tr><td colspan="6" class="vazio">Carregando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <a class="voltar" href="/">← voltar ao chat do robô</a>
+  </div>
+
+  <script>
+    let filtroAtual = 'futuros';
+    let agendamentos = [];
+
+    // botões de filtro
+    document.querySelectorAll('.filtros button').forEach(botao => {
+      botao.addEventListener('click', () => {
+        document.querySelectorAll('.filtros button').forEach(b => b.classList.remove('ativo'));
+        botao.classList.add('ativo');
+        filtroAtual = botao.dataset.filtro;
+        renderizar();
+      });
+    });
+
+    function formatarData(dataHora) {
+      // "2026-10-02 10:00" -> "02/10/2026 10:00"
+      const [data, hora] = dataHora.split(' ');
+      const [ano, mes, dia] = data.split('-');
+      return `${dia}/${mes}/${ano} ${hora}`;
+    }
+
+    async function carregar() {
+      try {
+        const resp = await fetch('/api/agendamentos');
+        const dados = await resp.json();
+        agendamentos = dados.agendamentos;
+        calcularResumo();
+        renderizar();
+      } catch (e) {
+        document.getElementById('linhas').innerHTML =
+          '<tr><td colspan="6" class="vazio">⚠️ Erro de conexão com o servidor</td></tr>';
+      }
+    }
+
+    function calcularResumo() {
+      const agora = new Date();
+      const hoje = agora.toDateString();
+      const futuros = agendamentos.filter(a => new Date(a.data_hora.replace(' ', 'T')) >= agora);
+
+      document.getElementById('total-futuros').textContent = futuros.length;
+      document.getElementById('total-hoje').textContent =
+        agendamentos.filter(a => new Date(a.data_hora.replace(' ', 'T')).toDateString() === hoje).length;
+      document.getElementById('faturamento').textContent =
+        'R$ ' + futuros.reduce((soma, a) => soma + a.preco, 0).toFixed(2);
+    }
+
+    function renderizar() {
+      const agora = new Date();
+      let lista = agendamentos;
+
+      if (filtroAtual === 'futuros') {
+        lista = lista.filter(a => new Date(a.data_hora.replace(' ', 'T')) >= agora);
+      } else if (filtroAtual === 'hoje') {
+        lista = lista.filter(a => new Date(a.data_hora.replace(' ', 'T')).toDateString() === agora.toDateString());
+      }
+
+      if (lista.length === 0) {
+        document.getElementById('linhas').innerHTML =
+          '<tr><td colspan="6" class="vazio">Nenhum agendamento aqui 📅</td></tr>';
+        return;
+      }
+
+      document.getElementById('linhas').innerHTML = lista.map(a => `
+        <tr>
+          <td>${formatarData(a.data_hora)}</td>
+          <td>${a.cliente}</td>
+          <td>${a.telefone || '—'}</td>
+          <td>${a.servico}</td>
+          <td class="preco">R$ ${a.preco.toFixed(2)}</td>
+          <td><button class="btn-cancelar" onclick="cancelar(${a.id}, '${a.cliente}')">✕ Cancelar</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function cancelar(id, cliente) {
+      if (!confirm(`Cancelar o agendamento de ${cliente}?`)) return;
+      await fetch('/api/agendamentos/' + id, { method: 'DELETE' });
+      carregar();  // recarrega a lista na hora
+    }
+
+    // primeira carga + atualização automática a cada 30 segundos
+    carregar();
+    setInterval(carregar, 30000);
+  </script>
+</body>
+</html>

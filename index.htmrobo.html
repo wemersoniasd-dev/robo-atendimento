@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<!-- Interface de chat no estilo WhatsApp para testar o robô -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robô de Atendimento 24h</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0b141a; height: 100vh;
+      display: flex; justify-content: center; align-items: center;
+    }
+    .celula {
+      width: 100%; max-width: 420px; height: 90vh;
+      background: #111b21; border-radius: 16px;
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    }
+    .topo {
+      background: #202c33; padding: 14px 18px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .topo .avatar {
+      width: 42px; height: 42px; border-radius: 50%;
+      background: #25d366; display: flex; align-items: center;
+      justify-content: center; font-size: 22px;
+    }
+    .topo h1 { font-size: 16px; color: #e9edef; }
+    .topo p  { font-size: 12px; color: #8696a0; }
+    .mensagens {
+      flex: 1; overflow-y: auto; padding: 18px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .msg {
+      max-width: 80%; padding: 9px 12px; border-radius: 10px;
+      font-size: 14px; line-height: 1.45; white-space: pre-wrap;
+      animation: entrar .18s ease;
+    }
+    @keyframes entrar { from { opacity: 0; transform: translateY(6px); } }
+    .cliente  { align-self: flex-end; background: #005c4b; color: #e9edef;  border-bottom-right-radius: 2px; }
+    .robo     { align-self: flex-start; background: #202c33; color: #e9edef; border-bottom-left-radius: 2px; }
+    .digitando {
+      align-self: flex-start; background: #202c33; color: #8696a0;
+      padding: 9px 14px; border-radius: 10px; font-size: 13px; display: none;
+    }
+    .entrada {
+      display: flex; background: #202c33; padding: 8px; gap: 8px;
+    }
+    .entrada input {
+      flex: 1; background: #2a3942; border: none; outline: none;
+      border-radius: 20px; padding: 11px 16px;
+      color: #e9edef; font-size: 14px;
+    }
+    .entrada button {
+      background: #25d366; border: none; border-radius: 50%;
+      width: 44px; cursor: pointer; font-size: 18px; color: #111b21;
+    }
+    .entrada button:hover { background: #20bd5a; }
+  </style>
+</head>
+<body>
+  <div class="celula">
+    <div class="topo">
+      <div class="avatar">💇</div>
+      <div>
+        <h1>Buguinha BARBER</h1>
+        <p>🤖 online - atendimento automático 24h</p>
+      </div>
+    </div>
+    <div class="mensagens" id="mensagens"></div>
+    <div class="digitando" id="digitando">digitando…</div>
+    <div class="entrada">
+      <input id="campo" type="text" placeholder="Digite uma mensagem"
+             autocomplete="off" autofocus>
+      <button onclick="enviar()" title="Enviar">➤</button>
+    </div>
+  </div>
+
+  <script>
+    const mensagens = document.getElementById('mensagens');
+    const campo     = document.getElementById('campo');
+    const digitando = document.getElementById('digitando');
+    // identificador único desta conversa (recarregar = conversa nova)
+    const idConversa = 'sessao-' + Math.random().toString(36).slice(2);
+
+    function adicionar(texto, classe) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + classe;
+      div.textContent = texto;
+      mensagens.appendChild(div);
+      mensagens.scrollTop = mensagens.scrollHeight;
+    }
+
+    async function enviar() {
+      const texto = campo.value.trim();
+      if (!texto) return;
+      adicionar(texto, 'cliente');
+      campo.value = '';
+      digitando.style.display = 'block';
+
+      try {
+        const resp = await fetch('/api/mensagem', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_conversa: idConversa, mensagem: texto })
+        });
+        const dados = await resp.json();
+        // pequena pausa para parecer que o robô "digita"
+        setTimeout(() => {
+          digitando.style.display = 'none';
+          adicionar(dados.resposta, 'robo');
+        }, 450);
+      } catch (e) {
+        digitando.style.display = 'none';
+        adicionar('⚠️ Erro de conexão. O servidor está rodando?', 'robo');
+      }
+    }
+
+    campo.addEventListener('keydown', e => { if (e.key === 'Enter') enviar(); });
+
+    // mensagem de abertura do robô
+    fetch('/api/mensagem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_conversa: idConversa, mensagem: 'oi' })
+    })
+      .then(r => r.json())
+      .then(d => adicionar(d.resposta, 'robo'));
+  </script>
+</body>
+</html>
